@@ -300,7 +300,7 @@
             ctx = {
                 data: null,
                 url: null,
-                httpMethod: crudToHttp[crudMethod],
+                httpMethod: options.type ? options.type.toUpperCase() : crudToHttp[crudMethod],
                 route: null
             },
 
