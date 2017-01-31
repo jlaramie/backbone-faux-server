@@ -9,7 +9,7 @@
 // Detect env & export module
 // --------------------------
 
-(function (root, createModule) {
+(function(root, createModule) {
     "use strict";
 
     // Detect current environment. Faux-server will be exposed as module / global accordingly:
@@ -23,7 +23,7 @@
     // A global `define` method with an `amd` property signifies the presence of an AMD loader
     //  (require.js, curl.js)
     if (typeof define === "function" && define.amd) {
-        return define(["underscore", "backbone", "exports"], function (_, Backbone, exports) {
+        return define(["underscore", "backbone", "exports"], function(_, Backbone, exports) {
             return createModule(exports, _, Backbone);
         });
     }
@@ -39,38 +39,43 @@
 
     // The `noConflict` method sets the `fauxServer` _global_ to to its previous value (_once_),
     //  returning a reference to `fauxServer` (_always_)
-    root.fauxServer.noConflict = function () {
+    root.fauxServer.noConflict = function() {
         var fauxServer = root.fauxServer;
         root.fauxServer = previousFauxServer;
-        return (fauxServer.noConflict = function () { return fauxServer; }).call();
+        return (fauxServer.noConflict = function() {
+            return fauxServer;
+        }).call();
     };
 
-// Create module
-// --------------------------
+    // Create module
+    // --------------------------
 
-}(this, function (fauxServer, _, Backbone) {
+}(this, function(fauxServer, _, Backbone) {
     "use strict";
 
     var
-        // A no-op method to reuse
-        noOp = function () {},
+    // A no-op method to reuse
+        noOp = function() {},
 
         // Clone an array skipping all tail-elements which are undefined. `Array.length` can't be
         //  trusted for arrays containing tail-element(s) explicitly set to `undefined` as it's
         //  always set to the index of the last element plus one - and a tail element explicitly
         //  set to undefined will in fact count as the 'last element'. Problematic when counting
         //  function arguments in order to sanitize, provide defaults, etc
-        skipUndefinedTail = function (array) {
-            var a = [], i = array.length - 1;
-            for (; i >= 0; i--) { if (!_.isUndefined(array[i])) { a[i] = array[i]; } }
+        skipUndefinedTail = function(array) {
+            var a = [],
+                i = array.length - 1;
+            for (; i >= 0; i--) {
+                if (!_.isUndefined(array[i])) { a[i] = array[i]; }
+            }
             return a;
         },
 
         // Convert a urlExp string - a string containing parameter parts (‘:param’), splat parts
         //  (‘*splat’) and parentheses into a regular expression
-        makeRegExp = (function () {
+        makeRegExp = (function() {
             var
-                // To escape special chars before converting to reg-exp
+            // To escape special chars before converting to reg-exp
                 e = /[\-{}\[\]+?.,\\\^$|#\s]/g,
 
                 // Optional part
@@ -83,15 +88,15 @@
                 s = /\*\w+/g,
 
                 // Don't confuse (regex-equivalent-subsituted) optional parts with named params
-                getReplacementForP = function (match, isOptPart) {
+                getReplacementForP = function(match, isOptPart) {
                     return isOptPart ? match : "([^\/]+)";
                 };
 
             return function(exp) {
                 exp = exp.replace(e, "\\$&")
-                         .replace(o, "(?:$1)?")
-                         .replace(p, getReplacementForP)
-                         .replace(s, "(.*?)");
+                    .replace(o, "(?:$1)?")
+                    .replace(p, getReplacementForP)
+                    .replace(s, "(.*?)");
 
                 return new RegExp("^" + exp + "$");
             };
@@ -132,7 +137,7 @@
         //  property: an array containing params that are to be passed to the handler as captured
         //  when the given URL was matched. Will return `null` if no route found. Note that
         //  the acquired route is a copy - it cannot be modified to affect faux-server's behaviour
-        getMatchingRoute = function (url, httpMethod) {
+        getMatchingRoute = function(url, httpMethod) {
             var i, r, weakMatch;
             for (i = routes.length - 1; i >= 0; --i) { // Iterating from latest to earliest
                 r = routes[i];
@@ -153,75 +158,104 @@
             return null;
         },
 
+        // Parses url for query parameters
+        getQueryParameters = function(qs) {
+            var match,
+                pl = /\+/g, // Regex for replacing addition symbol with a space
+                search = /([^&=]+)=?([^&]*)/g,
+                decode = function(s) {
+                    return decodeURIComponent(s.replace(pl, " "));
+                },
+                query = qs,
+                urlParams = {};
+
+            while (match = search.exec(query))
+                urlParams[decode(match[1])] = decode(match[2]);
+        },
+
+        // Takes a ctx object and parses the query string if available into ctx.query
+        parseCtx = function(ctx) {
+            var parts = ctx.url.split('?');
+
+            if (parts[1]) {
+                ctx.query = getQueryParameters(parts[1]);
+                ctx.url = parts[0];
+            } else {
+                ctx.query = {};
+            }
+
+            return ctx;
+        },
+
         // Create route for given `name`, `urlExp`, `httpMethod` and `handler`. Will set missing
         //  arguments to defaults and sanitize values where appropriate - note that the only
         //  mandatory argument is `urlExp`
-        createRoute = function (name, urlExp, httpMethod, handler) {
+        createRoute = function(name, urlExp, httpMethod, handler) {
             var args = skipUndefinedTail(_.toArray(arguments));
 
             switch (args.length) {
 
-            // Missing `name`, `handler` or `httpMethod`
-            case 3:
+                // Missing `name`, `handler` or `httpMethod`
+                case 3:
 
-                // Missing `name` or `httpMethod`
-                if (_.isFunction(args[2])) {
-                    handler = args[2];
+                    // Missing `name` or `httpMethod`
+                    if (_.isFunction(args[2])) {
+                        handler = args[2];
 
-                    // Missing `name`
-                    if (args[1] === "*" || _.contains(crudToHttp, args[1])) {
+                        // Missing `name`
+                        if (args[1] === "*" || _.contains(crudToHttp, args[1])) {
+                            urlExp = args[0];
+                            httpMethod = args[1];
+                            name = null;
+
+                            // Missing `httpMethod`
+                        } else {
+                            httpMethod = "*";
+                        }
+
+                        // Missing `handler`
+                    } else {
+                        handler = noOp;
+                    }
+                    break;
+
+                    // Missing `name` & `httpMethod`, `httpMethod` & `handler` or `name` & `handler`
+                case 2:
+
+                    // Missing `name` & `httpMethod`
+                    if (_.isFunction(args[1])) {
                         urlExp = args[0];
-                        httpMethod = args[1];
+                        handler = args[1];
+                        httpMethod = "*";
                         name = null;
 
-                    // Missing `httpMethod`
+                        // Missing `name` & `handler` or `httpMethod` & `handler`
                     } else {
-                        httpMethod = "*";
+                        handler = noOp;
+
+                        // Missing `name` & `handler`
+                        if (args[1] === "*" || _.contains(crudToHttp, args[1])) {
+                            urlExp = args[0];
+                            httpMethod = args[1];
+                            name = null;
+
+                            // Missing `httpMethod` & `handler`
+                        } else {
+                            httpMethod = "*";
+                        }
                     }
+                    break;
 
-                // Missing `handler`
-                } else {
-                    handler = noOp;
-                }
-                break;
-
-            // Missing `name` & `httpMethod`, `httpMethod` & `handler` or `name` & `handler`
-            case 2:
-
-                // Missing `name` & `httpMethod`
-                if (_.isFunction(args[1])) {
+                    // Missing `name` & `httpMethod` & `handler`
+                case 1:
                     urlExp = args[0];
-                    handler = args[1];
                     httpMethod = "*";
-                    name = null;
-
-                // Missing `name` & `handler` or `httpMethod` & `handler`
-                } else {
                     handler = noOp;
+                    name = null;
+                    break;
 
-                    // Missing `name` & `handler`
-                    if (args[1] === "*" || _.contains(crudToHttp, args[1])) {
-                        urlExp = args[0];
-                        httpMethod = args[1];
-                        name = null;
-
-                    // Missing `httpMethod` & `handler`
-                    } else {
-                        httpMethod = "*";
-                    }
-                }
-                break;
-
-            // Missing `name` & `httpMethod` & `handler`
-            case 1:
-                urlExp = args[0];
-                httpMethod = "*";
-                handler = noOp;
-                name = null;
-                break;
-
-            case 0:
-                throw new Error("addRoute: Missing mandatory 'urlExp' argument");
+                case 0:
+                    throw new Error("addRoute: Missing mandatory 'urlExp' argument");
             }
 
             httpMethod = httpMethod.toUpperCase();
@@ -237,24 +271,30 @@
 
         // Get the data that should be sent to the server during a sync. This depends on
         //  the sync-method being used and any options that may have been given
-        getRequestData = function (httpMethod, model, options) {
+        getRequestData = function(httpMethod, model, options) {
             // A `data` property whithin options overrides any Model data.
-            if (options.data) { return options.data; }
+            if (options.data) {
+                return options.data;
+            }
 
             // In the specific case of PATCH, a hash of 'changed attributes' is expected within
             //  options. If no such thing is present then the complete Model representation will
             //  be used instead
-            if (httpMethod === "PATCH") { return options.attrs || model.toJSON(); }
+            if (httpMethod === "PATCH") {
+                return options.attrs || model.toJSON();
+            }
 
             // Send the complete Model representation when POSTing or PUTing
-            if (httpMethod === "POST" || httpMethod === "PUT") { return model.toJSON(); }
+            if (httpMethod === "POST" || httpMethod === "PUT") {
+                return model.toJSON();
+            }
         },
 
         // Invoked _per sync_ (with the relevant options / context) to create a new transport -
         //  a deferred-like object implementing a `promise` / `resolve` / `reject` interface. A
         //  successfull sync will invoke `transport.resolve` while a failed one will invoke
         //  `transport.reject`. The sync method will always return `transport.promise()`
-        createTransport = function (syncOptions /*, syncContext */) {
+        createTransport = function(syncOptions /*, syncContext */ ) {
             var success = syncOptions.success || noOp,
                 error = syncOptions.error || noOp;
 
@@ -277,18 +317,20 @@
             //  `promise` returns an `undefined`. This is a good enough transport
             return {
                 promise: noOp,
-                resolve: function (value) { success(value); },
-                reject: function (reason) { error(reason); }
+                resolve: function(value) { success(value); },
+                reject: function(reason) { error(reason); }
             };
         };
 
     // ### The Sync method
 
     // Replace Backbone's native sync with faux-server sync:
-    Backbone.sync = function (crudMethod, model, options) {
+    Backbone.sync = function(crudMethod, model, options) {
 
         // If faux-server is disabled, fall back to original sync
-        if (!isEnabled) { return nativeSync.call(model, crudMethod, model, options); }
+        if (!isEnabled) {
+            return nativeSync.call(model, crudMethod, model, options);
+        }
 
         _.defaults(options || (options = {}), {
             emulateHTTP: Backbone.emulateHTTP,
@@ -296,7 +338,7 @@
         });
 
         var
-            // Sync context
+        // Sync context
             ctx = {
                 data: null,
                 url: null,
@@ -321,9 +363,11 @@
 
         // Ensure that we have a URL (A `url` property whithin options overrides Model /
         //  Collection URL)
-        if(!(ctx.url = options.url || _.result(model, "url"))) {
+        if (!(ctx.url = options.url || _.result(model, "url"))) {
             throw new Error("sync: Undefined 'url' property or function of Model / Collection");
         }
+
+        parseCtx(ctx);
 
         // Find route for given URL or fall back to native sync if none found
         if (!(ctx.route = getMatchingRoute(ctx.url, ctx.httpMethod) || defaultRoute)) {
@@ -338,7 +382,7 @@
 
         // An exec-method to actually run the handler and subsequently invoke success / error
         //  callbacks. (The relevant 'success' or 'error' event will be triggered by backbone)
-        execHandler = function () {
+        execHandler = function() {
             var result = ctx.route.handler.apply(null, [ctx].concat(ctx.route.handlerParams));
             transport[_.isString(result) ? "reject" : "resolve"](result);
         };
@@ -423,7 +467,7 @@
         //   HTTP status code that indicates failure, etc).
 
         //
-        addRoute: function (/* name, urlExp, httpMethod, handler */) {
+        addRoute: function( /* name, urlExp, httpMethod, handler */ ) {
             var route, routeIndex;
 
             // Create the route, defaulting and sanitizing where appropriate
@@ -431,7 +475,7 @@
 
             // If a route of given name is already present then overwrite it with this one.
             //  Otherwise just append the new route
-            _.any(routes, function (r, i) {
+            _.any(routes, function(r, i) {
                 if (r.name === route.name) {
                     routeIndex = i;
                     return true;
@@ -450,9 +494,9 @@
         //  faux-server
 
         //
-        addRoutes: function (routes) {
+        addRoutes: function(routes) {
             var isArray = _.isArray(routes);
-            _.each(routes, function (r, rName) {
+            _.each(routes, function(r, rName) {
                 this.addRoute(isArray ? r.name : rName, r.urlExp, r.httpMethod, r.handler);
             }, this);
             return this;
@@ -463,8 +507,10 @@
         // Remove route of given `routeName`. Returns the faux-server
 
         //
-        removeRoute: function (routeName) {
-            routes = _.reject(routes, function (r) { return r.name === routeName; });
+        removeRoute: function(routeName) {
+            routes = _.reject(routes, function(r) {
+                return r.name === routeName;
+            });
             return this;
         },
 
@@ -473,7 +519,7 @@
         // Remove all previously defined routes. Returns the faux-server
 
         //
-        removeRoutes: function () {
+        removeRoutes: function() {
             routes = [];
             return this;
         },
@@ -484,8 +530,10 @@
         //  acquired route is a copy - it cannot be modified to affect faux-server's behaviour
 
         //
-        getRoute: function (routeName) {
-            var route = _.find(routes, function (r) { return r.name === routeName; });
+        getRoute: function(routeName) {
+            var route = _.find(routes, function(r) {
+                return r.name === routeName;
+            });
             return route ? _.clone(route) : null;
         },
 
@@ -495,7 +543,7 @@
         //  acquired route is a copy - it cannot be modified to affect faux-server's behaviour
 
         //
-        getRouteAt: function (index) {
+        getRouteAt: function(index) {
             return routes[index] ? _.clone(routes[index]) : null;
         },
 
@@ -517,7 +565,7 @@
         //  so the `context.route` parameter will not be valid. Returns the faux-server
 
         //
-        setDefaultHandler: function (handler) {
+        setDefaultHandler: function(handler) {
             defaultRoute = !handler ? null : {
                 name: "",
                 urlExp: "",
@@ -536,8 +584,10 @@
         //  passed to the relevant route handler (`context`, etc). Returns the faux-server
 
         //
-        setLatency: function (min, max) {
-            latency = !max ? (min || 0) : function () { return min + Math.random() * (max - min); };
+        setLatency: function(min, max) {
+            latency = !max ? (min || 0) : function() {
+                return min + Math.random() * (max - min);
+            };
             return this;
         },
 
@@ -552,7 +602,7 @@
         //  the faux-server
 
         //
-        setTransportFactory: function (factory) {
+        setTransportFactory: function(factory) {
             createTransport = factory;
             return this;
         },
@@ -565,7 +615,7 @@
         //  Returns the faux-server
 
         //
-        enable: function (shouldEnable) {
+        enable: function(shouldEnable) {
             isEnabled = _.isUndefined(shouldEnable) || shouldEnable;
             return this;
         },
@@ -575,7 +625,7 @@
         // Get faux-server version
 
         //
-        getVersion: function () {
+        getVersion: function() {
             return "0.10.5"; // Keep in sync with package.json
         }
     });
@@ -585,20 +635,21 @@
     // Add a route to the faux-server, for HTTP GET / POST / PUT / PATCH / DEL
 
     // Attach `<httpMethod>(name, urlExp, handler)` shortcut-methods which delegate to `addRoute`
-    _.each(_.values(crudToHttp), function (httpMethod) {
+    _.each(_.values(crudToHttp), function(httpMethod) {
 
         // All shortcut-methods are named after the relevant HTTP verb except for 'delete' which is
         //  abbreviated to 'del' to avoid reserved-word trouble
         var method = httpMethod === "DELETE" ? "del" : httpMethod.toLowerCase();
 
-        fauxServer[method] = function () {
+        fauxServer[method] = function() {
             var args = skipUndefinedTail(_.toArray(arguments));
-            if (!args.length) { throw new Error(method + ": Missing mandatory 'urlExp' argument"); }
+            if (!args.length) {
+                throw new Error(method + ": Missing mandatory 'urlExp' argument");
+            }
 
             // The `httpMethod` must be inserted into the args, either at tail-position if
             //  `handler` is missing or just before it (after `urlExp`) if it's present
-            if (!_.isFunction(args[args.length - 1])) { args.push(httpMethod); }
-            else { args.splice(args.length - 1, 0, httpMethod); }
+            if (!_.isFunction(args[args.length - 1])) { args.push(httpMethod); } else { args.splice(args.length - 1, 0, httpMethod); }
 
             // Delegate to `addRoute`
             return fauxServer.addRoute.apply(this, args);
